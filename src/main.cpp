@@ -1,15 +1,47 @@
+#ifndef _WIN32
 #include <csignal>
+#include <unistd.h>
+#endif
 
 #include "Solver.hpp"
 
 std::atomic<bool> g_running(true);
 
-void signal_handler(int) {
+#ifdef _WIN32
+BOOL WINAPI WindowsCtrlHandler(DWORD fdwCtrlType) {
+    switch (fdwCtrlType) {
+    case CTRL_C_EVENT:
+    case CTRL_CLOSE_EVENT:
+    case CTRL_BREAK_EVENT:
+    case CTRL_SHUTDOWN_EVENT:
+        g_running = false;
+        return TRUE; 
+    default:
+        return FALSE;
+    }
+}
+#else
+void PosixSignalHandler(int) {
     g_running = false;
 }
+#endif
 
 int main() {
-    std::signal(SIGINT, signal_handler);
+#ifdef _WIN32
+    if (!SetConsoleCtrlHandler(WindowsCtrlHandler, TRUE)) {
+        std::cerr << "[System] Error: Could not set control handler." << std::endl;
+    }
+#else
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = PosixSignalHandler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+
+    sigaction(SIGINT, &sa, nullptr);
+    sigaction(SIGTERM, &sa, nullptr);
+    sigaction(SIGHUP, &sa, nullptr);
+#endif
 
     try
     {
@@ -40,6 +72,7 @@ int main() {
         auto getNum = [&](const std::string& text) {
             unsigned short num = 0;
             while (num == 0 && g_running) {
+                if (!std::cin.good()) std::this_thread::sleep_for(std::chrono::milliseconds(50));
                 unsigned long conv = strtoul(printer.prompt(text).c_str(), NULL, 0);
                 if (conv <= std::numeric_limits<unsigned short>::max()) num = conv;
             }
