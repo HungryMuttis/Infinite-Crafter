@@ -90,6 +90,21 @@ public:
             return this->request(url, method, postData, headers, timeout, proxy);
         });
     }
+    
+    void resizePool(size_t newSize) {
+        std::lock_guard<std::mutex> lock(pool_mutex);
+
+        while (connection_pool.size() > newSize) {
+            curl_easy_cleanup(connection_pool.top());
+            connection_pool.pop();
+        }
+
+        while (connection_pool.size() < newSize) {
+            CURL* curl = curl_easy_init();
+            if (curl) connection_pool.push(curl);
+            else break;
+        }
+    }
 
 private:
     static std::once_flag initFlag;
