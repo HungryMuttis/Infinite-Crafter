@@ -30,6 +30,8 @@ public:
         if (concurrency == 0) concurrency = 32;
         std::vector<std::thread> worker_threads;
 
+        client.resizePool((unsigned int)workers * concurrency);
+
         for (unsigned short i = 0; i < workers; ++i) worker_threads.push_back(std::thread(&Solver::worker, this, i, concurrency));
         printer.pushLeft("[Solver] Started " + std::to_string(workers) + " workers (Concurrency: " + std::to_string(concurrency) + ").");
 
