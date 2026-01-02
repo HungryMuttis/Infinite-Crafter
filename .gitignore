@@ -30,9 +30,11 @@
 *.exe
 *.out
 *.app
+
+# Libraries
 /vcpkg
+
+# My Stuff
 compile.bat
-headers.txt
-proxies.txt
-recipes.bin
-elements.bin
+/data
+proxies_optimized.txt

@@ -45,11 +45,26 @@ int main() {
 
     try
     {
-        Printer printer; 
+        Printer printer;
 
-        // 1. Setup Data
+        std::ifstream configFile("conf.json");
+        if (!configFile.is_open()) {
+            printer.pushLeft("[Config] Error: Could not open conf.json");
+            return 1;
+        }
+
+        nlohmann::json config;
+        try {
+            configFile >> config;
+        } catch (const nlohmann::json::parse_error& e) {
+            printer.pushLeft(std::string("[Config] JSON Parse Error: ") + e.what());
+            return 3;
+        }
+
+        std::string root = config.value("root", "");
+
         GameData data;
-        auto [code, elms] = data.load();
+        auto [code, elms] = data.load(root + config.value("elements", "elements.bin"), root + config.value("recipes", "recipes.bin"));
         printer.pushLeft("[Storage] Loaded " + std::to_string(elms) + " elements.");
         switch(code) {
             case 1:
@@ -58,41 +73,51 @@ int main() {
             case 2:
                 if (elms == 0) printer.pushLeft("[Storage] Elements database is corrupted.");
                 else printer.pushLeft("[Storage] Recipes database is corrupted.");
-                return 0;
+                return 2;
         }
         data.initDefaults();
 
-        // 2. Setup Network
         NetworkClient client;
 
-        // 3. Setup ProxyManager
         ProxyManager proxyManager;
-        if (proxyManager.load("proxies.txt")) {
-            printer.pushLeft("[Config] Loaded " + std::to_string(proxyManager.getCount()) + " proxies.");
-        } else {
-            printer.pushLeft("[Config] No proxies found in proxies.txt. Using direct connection.");
-        }
+        bool proxiesLoaded = false;
 
-        auto getNum = [&](const std::string& text) {
-            unsigned short num = 0;
-            while (num == 0 && g_running) {
-                if (!std::cin.good()) std::this_thread::sleep_for(std::chrono::milliseconds(50));
-                unsigned long conv = strtoul(printer.prompt(text).c_str(), NULL, 0);
-                if (conv <= std::numeric_limits<unsigned short>::max()) num = conv;
+        if (config.contains("proxies") && config["proxies"].is_array())
+            for (const auto& path : config["proxies"])
+                if (path.is_string()) {
+                    printer.pushLeft("[Proxies] Loading proxies from " + root + (std::string)path);
+                    if (proxyManager.load(root + (std::string)path)) proxiesLoaded = true;
+                    else printer.pushLeft("[Proxies] Failed to load proxies.");
+                }
+
+        if (config.contains("proxiesUrl") && config["proxiesUrl"].is_array())
+            for (const auto& url : config["proxiesUrl"])
+                if (url.is_string()) {
+                    printer.pushLeft("[Proxies] Downloading proxies from " + (std::string)url);
+                    if (proxyManager.loadFromUrl(&client, (std::string)url)) proxiesLoaded = true;
+                    else printer.pushLeft("[Proxies] Failed to download proxies.");
+                }
+
+        if (proxiesLoaded) {
+            printer.pushLeft("[Proxies] Loaded " + std::to_string(proxyManager.getCount()) + " proxies.");
+
+            unsigned short optimization = config.value("optimization", 0);
+            if (optimization > 0) {
+                printer.pushLeft("[Proxies] Optimizing proxies (concurrency: " + std::to_string(optimization) + ")...");
+                proxyManager.optimizeProxies(&g_running, &client, optimization, &printer, &Printer::setStats);
+                printer.pushLeft("[Proxies] Optimization complete. Active proxies: " + std::to_string(proxyManager.getCount()));
             }
-            return num;
-        };
+        } else printer.pushLeft("[Proxies] No proxies loaded. Using direct connection.");
 
-        // 4. Start Solver
-        Solver solver(data, client, printer, proxyManager);
+        Solver solver(root + config.value("headers", "headers.txt"), data, client, printer, proxyManager);
 
-        unsigned short workers = getNum("Number of workers: ");
-        unsigned short concurrency = getNum("Concurrency: ");
-        if (g_running) solver.run(&g_running, workers, concurrency);
+        if (g_running) solver.run(&g_running, config.value("workers", 1), config.value("concurrency", 1));
     } catch (const std::string& e) {
-        std::cout << "Fatal error (str): " << e;
+        std::cerr << "Fatal error (str): " << e;
+        return -1;
     } catch (const std::exception& e) {
-        std::cout << "Fatal error (exc): " << std::string(e.what());
+        std::cerr << "Fatal error (exc): " << std::string(e.what());
+        return -1;
     }
 
     return 0;

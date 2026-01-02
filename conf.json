@@ -1,0 +1,18 @@
+{
+    "root": "data/",
+
+    "elements": "elements.bin",
+    "recipes": "recipes.bin",
+    "headers": "headers.txt",
+    
+    "workers": 1,
+    "concurrency": 1,
+
+    "proxies": [
+        "proxies.txt"
+    ],
+    "proxiesUrl": [
+        "https://raw.githubusercontent.com/proxifly/free-proxy-list/refs/heads/main/proxies/all/data.txt"
+    ],
+    "optimization": 10
+}
