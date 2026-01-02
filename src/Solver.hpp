@@ -20,8 +20,8 @@ using json = nlohmann::json;
 
 class Solver {
 public:
-    Solver(GameData& data, NetworkClient& client, Printer& printer, ProxyManager& proxyManager) : data(data), client(client), printer(printer), proxyManager(proxyManager) {
-        loadHeaders();
+    Solver(std::string headersFile, GameData& data, NetworkClient& client, Printer& printer, ProxyManager& proxyManager) : data(data), client(client), printer(printer), proxyManager(proxyManager) {
+        loadHeaders(headersFile);
     }
 
     void run(std::atomic<bool>* running_flag, unsigned short workers, unsigned short concurrency = 1) {
@@ -237,8 +237,8 @@ private:
         return {names[0], names[1]};
     }
 
-    void loadHeaders() {
-        std::ifstream f("headers.txt");
+    void loadHeaders(std::string file) {
+        std::ifstream f(file);
         if (f.is_open()) {
             std::string line;
             while (std::getline(f, line)) {
