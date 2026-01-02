@@ -6,6 +6,7 @@
 #include <future>
 #include <mutex>
 #include <stack>
+#include <fstream>
 #include <curl/curl.h>
 
 class NetworkClient {
@@ -34,7 +35,7 @@ public:
         }
     }
 
-    Response request(const std::string& url, const std::string& method, const std::string& postData = "", const std::vector<std::string>& headers = {}, const long timeout = 10L, const std::string& proxy = "") {
+    Response request(const std::string& url, const std::string& method, const std::string& postData = "", const std::vector<std::string>* customHeaders = nullptr, const long timeout = 10L, const std::string& proxy = "") {
         CURL* curl = acquireHandle();
         Response response = {0, "", "", false};
 
@@ -46,9 +47,13 @@ public:
         std::string response_string;
         struct curl_slist* headerList = NULL;
 
-        for (const auto& h : headers) {
-            headerList = curl_slist_append(headerList, h.c_str());
-        }
+        if (customHeaders) {
+            for (const auto& h : *customHeaders)
+                headerList = curl_slist_append(headerList, h.c_str());
+        } else
+            for (const auto& h : headers)
+                headerList = curl_slist_append(headerList, h.c_str());
+
         curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headerList);
 
         curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
@@ -85,10 +90,24 @@ public:
         return response;
     }
 
-    std::future<Response> requestAsync(const std::string& url, const std::string& method, const std::string& postData = "", const std::vector<std::string>& headers = {}, const long timeout = 10L, const std::string& proxy = "") {
+    std::future<Response> requestAsync(const std::string& url, const std::string& method, const std::string& postData = "", const std::vector<std::string>* headers = nullptr, const long timeout = 10L, const std::string& proxy = "") {
         return std::async(std::launch::async, [=]() {
             return this->request(url, method, postData, headers, timeout, proxy);
         });
+    }
+    
+    size_t loadHeaders(std::string file) {
+        std::ifstream f(file);
+        if (f.is_open()) {
+            std::string line;
+            while (std::getline(f, line)) {
+                if (!line.empty() && line.find(':') != std::string::npos) {
+                    if (line.back() == '\r') line.pop_back();
+                    headers.push_back(line);
+                }
+            }
+            return headers.size();
+        } else return 0;
     }
 
     void resizePool(size_t newSize) {
@@ -108,6 +127,8 @@ public:
 
 private:
     static std::once_flag initFlag;
+
+    std::vector<std::string> headers;
 
     std::mutex pool_mutex;
         std::stack<CURL*> connection_pool;

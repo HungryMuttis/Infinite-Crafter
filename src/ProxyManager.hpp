@@ -10,6 +10,7 @@
 
 #include "NetworkClient.hpp"
 
+#include <random>
 class ProxyManager {
 public:
     ProxyManager() : current_index(0) {}
@@ -21,26 +22,28 @@ public:
         if (!f.is_open()) return false;
 
         std::string line;
-        while (std::getline(f, line)) {
-            parseAndAdd(line);
-        }
-        return !proxies.empty();
+        size_t prevsz = proxies.size();
+        while (std::getline(f, line)) parseAndAdd(line);
+        return proxies.size() - prevsz > 0;
     }
 
     bool loadFromUrl(NetworkClient* client, const std::string& url) {
         if (!client) return false;
 
-        auto response = client->request(url, "GET");
+        std::vector<std::string> headers = {};
+        auto response = client->request(url, "GET", "", &headers);
 
-        if (!response.success || response.status_code != 200) return false;
+        if (!response.success || response.status_code != 200) {
+            return false;
+        }
 
         std::lock_guard<std::mutex> lock(mtx);
 
         std::stringstream ss(response.body);
         std::string line;
+        size_t prevsz = proxies.size();
         while (std::getline(ss, line)) parseAndAdd(line);
-
-        return !proxies.empty();
+        return proxies.size() - prevsz > 0;
     }
 
     template<typename T>
@@ -64,7 +67,6 @@ public:
 
         static const std::vector<std::string> schemes = {"socks5://", "socks4://", "https://", "http://"};
 
-        size_t total = unique_proxies.size();
         std::atomic<size_t> proxy = 0, requests = 0;
         for (const auto& raw_proxy : unique_proxies) {
             if (running && !*running) break;
@@ -73,7 +75,11 @@ public:
             auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - start).count();
             double elapsed_dbl = std::chrono::duration<double>(now - start).count();
             double speed = (elapsed_dbl > 0) ? (proxy / elapsed_dbl) : 0.0;
-            (inst->*statsCallback)(speed, elapsed, proxy, total, requests);
+
+            {
+                std::lock_guard<std::mutex> lock(opt_mtx);
+                (inst->*statsCallback)(speed, elapsed, proxy, optimized_proxies.size(), requests);
+            }
 
             while (tasks.size() >= concurrent_checks) {
                 if (running && !*running) break;
@@ -105,9 +111,9 @@ public:
                     if (running && !*running) break;
 
                     ++requests;
-                    auto resp = client->request("http://www.google.com", "GET", "", {}, 5L, p);
+                    auto resp = client->request("http://neal.fun/infinite-craft", "GET", "", nullptr, 5L, p);
                     --requests;
-                    if (resp.success && resp.status_code == 200) {
+                    if (resp.success) {
                         std::lock_guard<std::mutex> lock(opt_mtx);
                         optimized_proxies.push_back(p);
                         break;

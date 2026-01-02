@@ -58,7 +58,7 @@ int main() {
             configFile >> config;
         } catch (const nlohmann::json::parse_error& e) {
             printer.pushLeft(std::string("[Config] JSON Parse Error: ") + e.what());
-            return 3;
+            return 2;
         }
 
         std::string root = config.value("root", "");
@@ -73,11 +73,15 @@ int main() {
             case 2:
                 if (elms == 0) printer.pushLeft("[Storage] Elements database is corrupted.");
                 else printer.pushLeft("[Storage] Recipes database is corrupted.");
-                return 2;
+                return 3;
         }
         data.initDefaults();
 
         NetworkClient client;
+        if (std::string headers = config.value("headers", ""); headers != "")
+            if (size_t count = client.loadHeaders(root + headers); count > 0) printer.pushLeft("[Netwrok] Loaded " + std::to_string(count) + " headers.");
+            else printer.pushLeft("[Netwrok] Headers file found, but 0 headers loaded.");
+        else printer.pushLeft("[Netwrok] Headers file not provided.");
 
         ProxyManager proxyManager;
         bool proxiesLoaded = false;
@@ -109,7 +113,7 @@ int main() {
             }
         } else printer.pushLeft("[Proxies] No proxies loaded. Using direct connection.");
 
-        Solver solver(root + config.value("headers", "headers.txt"), data, client, printer, proxyManager);
+        Solver solver(data, client, printer, proxyManager);
 
         if (g_running) solver.run(&g_running, config.value("workers", 1), config.value("concurrency", 1));
     } catch (const std::string& e) {

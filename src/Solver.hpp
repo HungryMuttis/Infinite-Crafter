@@ -20,9 +20,7 @@ using json = nlohmann::json;
 
 class Solver {
 public:
-    Solver(std::string headersFile, GameData& data, NetworkClient& client, Printer& printer, ProxyManager& proxyManager) : data(data), client(client), printer(printer), proxyManager(proxyManager) {
-        loadHeaders(headersFile);
-    }
+    Solver(GameData& data, NetworkClient& client, Printer& printer, ProxyManager& proxyManager) : data(data), client(client), printer(printer), proxyManager(proxyManager) {}
 
     void run(std::atomic<bool>* running_flag, unsigned short workers, unsigned short concurrency = 1) {
         this->running_flag = running_flag;
@@ -67,8 +65,6 @@ private:
     ProxyManager& proxyManager;
 
     std::atomic<bool>* running_flag;
-
-    std::vector<std::string> headers;
 
     std::atomic<size_t> checks = 0;
     std::atomic<size_t> num_requests = 0;
@@ -202,7 +198,7 @@ private:
     }
 
     std::future<NetworkClient::Response> createRequest(const std::pair<std::string, std::string>& names, const std::string& proxy) {
-        return client.requestAsync("https://neal.fun/api/infinite-craft/pair?first=" + urlEncode(names.first) + "&second=" + urlEncode(names.second), "GET", "", headers, 10L, proxy);
+        return client.requestAsync("https://neal.fun/api/infinite-craft/pair?first=" + urlEncode(names.first) + "&second=" + urlEncode(names.second), "GET", "", nullptr, 10L, proxy);
     }
 
     std::mutex element_mutex;
@@ -237,22 +233,6 @@ private:
         std::vector<std::string> names = data.getNames({comb.first, comb.second});
         if (names[0] > names[1]) std::swap(names[0], names[1]);
         return {names[0], names[1]};
-    }
-
-    void loadHeaders(std::string file) {
-        std::ifstream f(file);
-        if (f.is_open()) {
-            std::string line;
-            while (std::getline(f, line)) {
-                if (!line.empty() && line.find(':') != std::string::npos) {
-                    if (line.back() == '\r') line.pop_back();
-                    headers.push_back(line);
-                }
-            }
-            printer.pushLeft("[Config] Loaded " + std::to_string(headers.size()) + " headers from headers.txt");
-        } else {
-            printer.pushLeft("[Config] Warning: headers.txt not found. Cloudflare will likely block requests.");
-        }
     }
 
     static void logDebugInfo(const std::string& a, const std::string& b, const NetworkClient::Response& res, const std::string& errorMsg) {
