@@ -105,7 +105,7 @@ public:
                     if (running && !*running) break;
 
                     ++requests;
-                    auto resp = client.request("http://www.google.com", "GET", "", {}, 5L, p);
+                    auto resp = client->request("http://www.google.com", "GET", "", {}, 5L, p);
                     --requests;
                     if (resp.success && resp.status_code == 200) {
                         std::lock_guard<std::mutex> lock(opt_mtx);
