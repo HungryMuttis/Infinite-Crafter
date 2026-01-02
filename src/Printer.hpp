@@ -27,7 +27,7 @@
 
 class Printer {
 public:
-    Printer() : running(true), changed(false), inputting(false) {
+    Printer() : running(true), changed(false), inputting(false), mustPrint(false) {
         stats = { 0.0, 0, 0, 0, 0 };
 
         enableAnsiSupport();
@@ -44,12 +44,12 @@ public:
 
             running = false;
             changed = true;
+            mustPrint = true;
         }
         cv.notify_one();
 
-        if (render_thread.joinable()) {
+        if (render_thread.joinable())
             render_thread.join();
-        }
 
         std::cout << "\033[?7h\033[?25h";
         std::cout << "\033[" << height << ";1H\n";
@@ -160,7 +160,7 @@ private:
     std::mutex console_mutex;
     std::mutex render_mutex;
         std::condition_variable cv;
-        bool changed;
+        bool changed, mustPrint;
     
     std::atomic<bool> inputting;
     
@@ -290,7 +290,7 @@ private:
                 std::unique_lock<std::mutex> lock(render_mutex);
                 cv.wait_for(lock, std::chrono::milliseconds(50), [this]{ return changed || !running; });
                 
-                if (!running) return;
+                if (!running && !mustPrint) return;
 
                 updateDimensions();
                 if (width != last_w || height != last_h) {
@@ -309,6 +309,7 @@ private:
                 snap_prompt = current_prompt;
                 
                 changed = false;
+                mustPrint = false;
             } 
 
             // --- Layout Calculation ---
@@ -401,17 +402,11 @@ private:
                 }
             }
 
-            // --- OUTPUT PHASE ---
+            // --- OUTPUT ---
             {
                 std::lock_guard<std::mutex> io_lock(console_mutex);
 
-                // RACE CONDITION FIX:
-                // If the 'inputting' state changed while we were generating this frame,
-                // our frame is stale (e.g., it contains a status bar, but prompt() just printed a prompt).
-                // We MUST ABORT printing this frame to avoid overwriting the prompt.
-                if (inputting != snap_inputting) {
-                    continue; 
-                }
+                if (inputting != snap_inputting) continue; 
 
                 std::cout << ss.str() << std::flush;
             }
