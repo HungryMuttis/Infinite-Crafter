@@ -95,7 +95,7 @@ public:
             return this->request(url, method, postData, headers, timeout, proxy);
         });
     }
-    
+
     size_t loadHeaders(std::string file) {
         std::ifstream f(file);
         if (f.is_open()) {

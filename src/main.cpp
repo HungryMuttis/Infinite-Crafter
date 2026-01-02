@@ -102,16 +102,8 @@ int main() {
                     else printer.pushLeft("[Proxies] Failed to download proxies.");
                 }
 
-        if (proxiesLoaded) {
-            printer.pushLeft("[Proxies] Loaded " + std::to_string(proxyManager.getCount()) + " proxies.");
-
-            unsigned short optimization = config.value("optimization", 0);
-            if (optimization > 0) {
-                printer.pushLeft("[Proxies] Optimizing proxies (concurrency: " + std::to_string(optimization) + ")...");
-                proxyManager.optimizeProxies(&g_running, &client, optimization, &printer, &Printer::setStats);
-                printer.pushLeft("[Proxies] Optimization complete. Active proxies: " + std::to_string(proxyManager.getCount()));
-            }
-        } else printer.pushLeft("[Proxies] No proxies loaded. Using direct connection.");
+        if (proxiesLoaded) printer.pushLeft("[Proxies] Loaded " + std::to_string(proxyManager.getCount()) + " proxies.");
+        else printer.pushLeft("[Proxies] No proxies loaded. Using direct connection.");
 
         Solver solver(data, client, printer, proxyManager);
 

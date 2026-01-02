@@ -177,10 +177,9 @@ private:
     }
 
     void handleError(size_t errorId, const std::string& proxy, const std::string& workerStr, const std::pair<std::string, std::string>& names) {
+        proxyManager.report(proxy);
         switch (errorId) {
         case 0:
-            // Fix lagging when in proxy deadzones
-            std::this_thread::sleep_for(std::chrono::milliseconds(1)); // 1ms
             break;
         case 1:
             printer.pushLeft("[Worker-" + workerStr + "][Network] Rate-limited: " + proxy);

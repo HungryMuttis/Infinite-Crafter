@@ -1,22 +1,19 @@
 #ifndef PROXY_MANAGER_HPP
 #define PROXY_MANAGER_HPP
 
-#include <string>
 #include <vector>
-#include <fstream>
 #include <atomic>
 #include <mutex>
 #include <algorithm>
 
 #include "NetworkClient.hpp"
 
-#include <random>
 class ProxyManager {
 public:
-    ProxyManager() : current_index(0) {}
+    ProxyManager() : loop(0), current_index(0) {}
 
     bool load(const std::string& filename) {
-        std::lock_guard<std::mutex> lock(mtx);
+        std::lock_guard<std::mutex> lock(proxy_mutex);
 
         std::ifstream f(filename);
         if (!f.is_open()) return false;
@@ -24,6 +21,8 @@ public:
         std::string line;
         size_t prevsz = proxies.size();
         while (std::getline(f, line)) parseAndAdd(line);
+
+        finalize();
         return proxies.size() - prevsz > 0;
     }
 
@@ -33,112 +32,61 @@ public:
         std::vector<std::string> headers = {};
         auto response = client->request(url, "GET", "", &headers);
 
-        if (!response.success || response.status_code != 200) {
-            return false;
-        }
+        if (!response.success || response.status_code != 200) return false;
 
-        std::lock_guard<std::mutex> lock(mtx);
+        std::lock_guard<std::mutex> lock(proxy_mutex);
 
         std::stringstream ss(response.body);
         std::string line;
         size_t prevsz = proxies.size();
         while (std::getline(ss, line)) parseAndAdd(line);
+
+        finalize();
         return proxies.size() - prevsz > 0;
     }
 
-    template<typename T>
-    void optimizeProxies(std::atomic<bool>* running, NetworkClient* client, unsigned int concurrent_checks, T* inst, void(T::*statsCallback)(double speed, long long elapsed, size_t proxy, size_t total, size_t requests)) {
-        if (!client) return;
+    void report(const std::string& proxy) {
+        if (!reporting) return;
 
-        std::vector<std::string> unique_proxies;
-        {
-            std::lock_guard<std::mutex> lock(mtx);
-            if (proxies.empty()) return;
-            std::sort(proxies.begin(), proxies.end());
-            proxies.erase(std::unique(proxies.begin(), proxies.end()), proxies.end());
-            unique_proxies = proxies;
-        }
+        std::lock_guard<std::mutex> lock(proxy_mutex);
 
-        auto start = std::chrono::steady_clock::now();
+        auto it = std::lower_bound(proxies.begin(), proxies.end(), proxy,
+            [](const ProxyEntry& entry, const std::string& val) {
+                return entry.url < val;
+            });
 
-        std::vector<std::string> optimized_proxies;
-        std::mutex opt_mtx;
-        std::vector<std::future<void>> tasks;
+        if (it != proxies.end() && it->url == proxy) {
+            it->failures++;
 
-        static const std::vector<std::string> schemes = {"socks5://", "socks4://", "https://", "http://"};
+            if (it->failures >= 18) {
+                size_t index = std::distance(proxies.begin(), it);
 
-        std::atomic<size_t> proxy = 0, requests = 0;
-        for (const auto& raw_proxy : unique_proxies) {
-            if (running && !*running) break;
-
-            auto now = std::chrono::steady_clock::now();
-            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - start).count();
-            double elapsed_dbl = std::chrono::duration<double>(now - start).count();
-            double speed = (elapsed_dbl > 0) ? (proxy / elapsed_dbl) : 0.0;
-
-            {
-                std::lock_guard<std::mutex> lock(opt_mtx);
-                (inst->*statsCallback)(speed, elapsed, proxy, optimized_proxies.size(), requests);
+                if (index < current_index && current_index > 0) current_index--;
+                proxies.erase(it);
+                if (current_index >= proxies.size()) current_index = 0;
             }
-
-            while (tasks.size() >= concurrent_checks) {
-                if (running && !*running) break;
-
-                bool removed = false;
-                for (size_t i = 0; i < tasks.size(); ) {
-                    if (tasks[i].wait_for(std::chrono::milliseconds(0)) == std::future_status::ready) {
-                        tasks[i].get();
-                        if (i < tasks.size() - 1)
-                            tasks[i] = std::move(tasks.back());
-
-                        tasks.pop_back();
-                        removed = true;
-                    } else ++i;
-                }
-                if (!removed) std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            }
-
-            if (running && !*running) break;
-
-            tasks.push_back(std::async(std::launch::async, [&, raw_proxy]() {
-                std::vector<std::string> candidates;
-                if (raw_proxy.find("://") != std::string::npos)
-                    candidates.push_back(raw_proxy);
-                else
-                    for (const auto& s : schemes) candidates.push_back(s + raw_proxy);
-
-                for (const auto& p : candidates) {
-                    if (running && !*running) break;
-
-                    ++requests;
-                    auto resp = client->request("http://neal.fun/infinite-craft", "GET", "", nullptr, 5L, p);
-                    --requests;
-                    if (resp.success) {
-                        std::lock_guard<std::mutex> lock(opt_mtx);
-                        optimized_proxies.push_back(p);
-                        break;
-                    }
-                }
-                ++proxy;
-            }));
-        }
-
-        for (auto& task : tasks) task.get();
-
-        {
-            std::lock_guard<std::mutex> lock(mtx);
-            proxies = optimized_proxies;
-            current_index = 0;
-        }
-
-        std::ofstream out("proxies_optimized.txt");
-        if (out.is_open()) {
-            for (const auto& p : proxies) out << p << "\n";
         }
     }
 
+    std::string getNext() {
+        std::lock_guard<std::mutex> lock(proxy_mutex);
+
+        if (proxies.empty()) return "";
+
+        std::string ret = proxies[current_index].url;
+        if (++current_index >= proxies.size()) {
+            current_index = 0;
+            if (reporting.load(std::memory_order_relaxed) && ++loop == 20) {
+                for (auto& entry : proxies) entry.failures = 0;
+                reporting.store(false, std::memory_order_relaxed);
+            }
+        }
+        return ret;
+    }
+
     size_t getCount() const {
-        std::lock_guard<std::mutex> lock(mtx);
+        std::lock_guard<std::mutex> lock(proxy_mutex);
+
         return proxies.size();
     }
 
@@ -146,21 +94,35 @@ public:
         return current_index;
     }
 
-    std::string getNext() {
-        std::lock_guard<std::mutex> lock(mtx);
-
-        if (proxies.empty()) return "";
-
-        std::string ret = proxies[current_index];
-        if (current_index + 1 >= proxies.size()) current_index = 0;
-        else ++current_index;
-        return ret;
-    }
-
 private:
-    mutable std::mutex mtx;
-        std::vector<std::string> proxies;
+    struct ProxyEntry {
+        std::string url;
+        unsigned char failures = 0;
+
+        bool operator<(const ProxyEntry& other) const {
+            return url < other.url;
+        }
+    };
+
+    mutable std::mutex proxy_mutex;
+        std::vector<ProxyEntry> proxies;
+        size_t loop;
     std::atomic<size_t> current_index;
+    std::atomic<bool> reporting{true};
+
+    void finalize() {
+        if (proxies.empty()) return;
+
+        std::sort(proxies.begin(), proxies.end());
+        auto last = std::unique(proxies.begin(), proxies.end(),
+            [](const ProxyEntry& a, const ProxyEntry& b) {
+                return a.url == b.url;
+            });
+
+        proxies.erase(last, proxies.end());
+
+        if (current_index >= proxies.size()) current_index = 0;
+    }
 
     void parseAndAdd(std::string line) {
         size_t first = line.find_first_not_of(" \t\r\n");
@@ -181,7 +143,8 @@ private:
                 proxy = user + ":" + pass + "@" + ip + ":" + port;
             }
         }
-        proxies.push_back(proxy);
+        if (proxy.find("://") == std::string::npos) proxy = "http://" + proxy;
+        proxies.push_back({proxy, 0});
     }
 };
 

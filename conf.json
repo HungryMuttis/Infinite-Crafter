@@ -9,10 +9,13 @@
     "concurrency": 1,
 
     "proxies": [
-        "proxies.txt"
+        "go2proxy.com.txt",
+        "proxyscrape.com.txt",
+        "webshare.io_1.txt",
+        "webshare.io_2.txt",
+        "webshare.io_3.txt"
     ],
     "proxiesUrl": [
         "https://raw.githubusercontent.com/proxifly/free-proxy-list/refs/heads/main/proxies/all/data.txt"
-    ],
-    "optimization": 10
+    ]
 }
