@@ -45,7 +45,7 @@ public:
 
         std::string response_string;
         struct curl_slist* headerList = NULL;
-        
+
         for (const auto& h : headers) {
             headerList = curl_slist_append(headerList, h.c_str());
         }
@@ -55,7 +55,7 @@ public:
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_string);
         curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, method.c_str());
-        curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, ""); 
+        curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
 
         if (!proxy.empty()) {
             curl_easy_setopt(curl, CURLOPT_PROXY, proxy.c_str());
@@ -65,7 +65,7 @@ public:
             curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postData.c_str());
         }
 
-        curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout); 
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout);
 
         CURLcode res = curl_easy_perform(curl);
 
@@ -79,7 +79,7 @@ public:
         }
 
         if (headerList) curl_slist_free_all(headerList);
-        
+
         releaseHandle(curl);
 
         return response;
@@ -90,7 +90,7 @@ public:
             return this->request(url, method, postData, headers, timeout, proxy);
         });
     }
-    
+
     void resizePool(size_t newSize) {
         std::lock_guard<std::mutex> lock(pool_mutex);
 
@@ -111,7 +111,7 @@ private:
 
     std::mutex pool_mutex;
         std::stack<CURL*> connection_pool;
-    
+
     CURL* acquireHandle() {
         std::lock_guard<std::mutex> lock(pool_mutex);
         if (connection_pool.empty()) return curl_easy_init();

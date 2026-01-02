@@ -43,7 +43,7 @@ public:
         std::lock_guard<std::mutex> lock(mtx);
 
         if (proxies.empty()) return "";
-        
+
         std::string ret = proxies[current_index];
         if (current_index + 1 >= proxies.size()) current_index = 0;
         else ++current_index;

@@ -15,7 +15,7 @@ BOOL WINAPI WindowsCtrlHandler(DWORD fdwCtrlType) {
     case CTRL_BREAK_EVENT:
     case CTRL_SHUTDOWN_EVENT:
         g_running = false;
-        return TRUE; 
+        return TRUE;
     default:
         return FALSE;
     }

@@ -16,9 +16,9 @@ struct Element {
 };
 
 struct RecipeRecord {
-    uint32_t first;  
-    uint32_t second; 
-    uint32_t result; 
+    uint32_t first;
+    uint32_t second;
+    uint32_t result;
 };
 
 class GameData {
@@ -80,12 +80,12 @@ public:
         uint32_t id = (uint32_t)elements.size();
         elements.push_back({name});
         name_to_id[elements.back().name] = id;
-        
+
         appendElementToDisk(name, emoji, isGlobalNew);
-        
+
         return {id, true};
     }
-    
+
     size_t getElementCount() const {
         std::shared_lock lock(elements_mutex);
 
@@ -102,7 +102,7 @@ public:
 
         if (idA > idB) std::swap(idA, idB);
 
-        auto it = std::lower_bound(known_recipes.begin(), known_recipes.end(), std::make_pair(idA, idB), 
+        auto it = std::lower_bound(known_recipes.begin(), known_recipes.end(), std::make_pair(idA, idB),
             [](const RecipeRecord& r, const std::pair<uint32_t, uint32_t>& val) {
                 if (r.second != val.second) return r.second < val.second;
                 return r.first < val.first;
@@ -117,7 +117,7 @@ public:
 
         if (idA > idB) std::swap(idA, idB);
 
-        auto it = std::lower_bound(known_recipes.begin(), known_recipes.end(), std::make_pair(idA, idB), 
+        auto it = std::lower_bound(known_recipes.begin(), known_recipes.end(), std::make_pair(idA, idB),
             [](const RecipeRecord& r, const std::pair<uint32_t, uint32_t>& val) {
                 if (r.second != val.second) return r.second < val.second;
                 return r.first < val.first;
@@ -131,7 +131,7 @@ public:
 
     void initDefaults() {
         if (elements.empty()) {
-            addElement("Nothing", "", false); 
+            addElement("Nothing", "", false);
             addElement("Water", "💧", false);
             addElement("Fire", "🔥", false);
             addElement("Wind", "🌬️", false);
@@ -164,7 +164,7 @@ private:
             uint16_t nameLen = 0;
             uint16_t emojiLen = 0;
             bool isNew = false;
-            
+
             if (!f.read((char*)&nameLen, sizeof(nameLen))) return false; // Partial data
             if (nameLen > 4096) return false; // Name too long
 
@@ -174,7 +174,7 @@ private:
             if (!f.read((char*)&emojiLen, sizeof(emojiLen))) return false; // Missing data (emoji)
             if (emojiLen > 4096) return false; // Emoji too long
 
-            f.ignore(emojiLen); 
+            f.ignore(emojiLen);
             if (f.gcount() != emojiLen) return false; // Unexpected EOF (emoji)
 
             if (!f.read((char*)&isNew, sizeof(isNew))) return false; // Unexpected EOF (New Flag)
@@ -183,7 +183,7 @@ private:
             elements.push_back({name});
             name_to_id[elements.back().name] = id;
         }
-        
+
         return true;
     }
 
@@ -196,12 +196,12 @@ private:
         f.seekg(0, std::ios::beg);
 
         if (fileSize == 0) return true;
-        if (fileSize % sizeof(RecipeRecord) != 0) return false; 
+        if (fileSize % sizeof(RecipeRecord) != 0) return false;
 
         size_t count = fileSize / sizeof(RecipeRecord);
         known_recipes.resize(count);
-        
-        if (!f.read((char*)known_recipes.data(), fileSize)) return false; 
+
+        if (!f.read((char*)known_recipes.data(), fileSize)) return false;
 
         // Canonicalize (ensure first < second)
         for (auto& r : known_recipes) {
@@ -210,7 +210,7 @@ private:
         }
 
         // Sort by Second ID (Primary), then First ID (Secondary)
-        std::sort(known_recipes.begin(), known_recipes.end(), 
+        std::sort(known_recipes.begin(), known_recipes.end(),
             [](const RecipeRecord& a, const RecipeRecord& b) {
                 if (a.second != b.second) return a.second < b.second;
                 return a.first < b.first;
@@ -231,13 +231,13 @@ private:
 
         uint16_t nameLen = (uint16_t)name.size();
         uint16_t emojiLen = (uint16_t)emoji.size();
-        
+
         elements_out.write((char*)&nameLen, sizeof(nameLen));
         elements_out.write(name.data(), nameLen);
         elements_out.write((char*)&emojiLen, sizeof(emojiLen));
         elements_out.write(emoji.data(), emojiLen);
         elements_out.write((char*)&isNew, sizeof(isNew));
-        
+
         // Flush to ensure data is safe in case of crash
         elements_out.flush();
     }
@@ -248,7 +248,7 @@ private:
         if (a > b) std::swap(a, b);
         RecipeRecord r = {a, b, res};
         recipes_out.write((char*)&r, sizeof(r));
-        recipes_out.flush(); 
+        recipes_out.flush();
     }
 };
 

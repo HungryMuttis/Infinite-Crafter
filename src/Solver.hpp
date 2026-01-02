@@ -10,7 +10,7 @@
 #include <thread>
 #include <chrono>
 #include <iomanip>
-#include <sstream>    
+#include <sstream>
 #include <fstream>
 #include <vector>
 #include <random>
@@ -86,7 +86,7 @@ private:
 
         std::vector<ActiveRequest> requests;
         requests.reserve(concurrency);
-        
+
         while (*running_flag || !requests.empty()) {
             bool wait = true;
 
@@ -111,7 +111,7 @@ private:
                             it->proxy = proxy;
                             it->future = createRequest(it->names, proxy);
                             ++num_requests;
-                            
+
                             ++it;
                         } else it = requests.erase(it);
                     }
@@ -162,14 +162,14 @@ private:
         try {
             auto j = json::parse(response.body);
             std::string result = j.value("result", "Nothing");
-            
+
             if (result == "Nothing") {
                 printer.pushRight(names.first + " + " + names.second + " = Nothing");
                 return { true, GameData::NOTHING_ID };
             } else {
                 std::string emoji = j.value("emoji", "");
                 bool isGlobalNew = j.value("isNew", false);
-                
+
                 auto [resultId, isLocalNew] = data.addElement(result, emoji, isGlobalNew);
                 printer.pushRight((isLocalNew ? (isGlobalNew ? "[GLOBAL NEW] " : "[NEW] ") : "") + names.first + " + " + names.second + " = " + emoji + " " + result + " (#" + std::to_string(resultId) + ")");
                 return { true, resultId };
@@ -209,12 +209,12 @@ private:
         size_t cursor_i = 1, cursor_j = 1;
     std::pair<uint32_t, uint32_t> next() {
         std::lock_guard<std::mutex> lock(element_mutex);
-        
+
         size_t max_elements = data.getElementCount();
 
         while (cursor_i < max_elements) {
             cursor_j++;
-            
+
             if (cursor_j > cursor_i) {
                 cursor_i++;
                 cursor_j = 1;
@@ -223,12 +223,12 @@ private:
             if (cursor_i >= max_elements) break;
             if (data.getResult((uint32_t)cursor_i, (uint32_t)cursor_j) == UINT32_MAX) return {(uint32_t)cursor_i, (uint32_t)cursor_j};
         }
-        
+
         cursor_i = 1;
         cursor_j = 1;
         return {0, 0};
     }
-    
+
     void sleep(unsigned short amount) const {
         for (unsigned short i = 0; i < amount && *running_flag; ++i) std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
@@ -266,7 +266,7 @@ private:
         for (int i = 0; i < 8; ++i) {
             tmp_s += alphanum[dis(gen)];
         }
-        
+
         std::ofstream log("debug_log_" + tmp_s + ".txt", std::ios::app);
         if (log.is_open()) {
             auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());

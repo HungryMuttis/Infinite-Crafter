@@ -32,9 +32,9 @@ public:
 
         enableAnsiSupport();
         updateDimensions();
-        
+
         std::cout << "\033[?25l\033[?7l\033[2J\033[3J\033[1;1H" << std::flush;
-        
+
         render_thread = std::thread(&Printer::renderLoop, this);
     }
 
@@ -72,7 +72,7 @@ public:
     void pushLeft(const std::string& text) {
         {
             std::lock_guard<std::mutex> lock(render_mutex);
-            
+
             if (left_buffer.size() > 100) left_buffer.pop_front();
             left_buffer.push_back(text);
             changed = true;
@@ -96,20 +96,20 @@ public:
 
         std::string input;
         int local_height;
-        
+
         {
             std::unique_lock<std::mutex> r_lock(render_mutex);
-            
+
             inputting = true;
             current_prompt = message;
             changed = true;
-            
-            updateDimensions(); 
+
+            updateDimensions();
             local_height = height;
 
             {
                 std::lock_guard<std::mutex> io_lock(console_mutex);
-                std::cout << "\033[" << local_height << ";1H\033[2K"; 
+                std::cout << "\033[" << local_height << ";1H\033[2K";
                 std::cout << "\033[0m" << message << std::flush;
                 std::cout << "\033[?25h";
             }
@@ -122,7 +122,7 @@ public:
         if (running) {
             {
                 std::lock_guard<std::mutex> lock(render_mutex);
-                
+
                 inputting = false;
                 changed = true;
                 current_prompt.clear();
@@ -134,7 +134,7 @@ public:
                 std::cout << "\033[?25l";
             }
         }
-        
+
         return input;
     }
 
@@ -142,7 +142,7 @@ private:
     std::deque<std::string> left_buffer;
     std::deque<std::string> right_buffer;
     std::string current_prompt;
-    
+
     struct Stats {
         double speed;
         long long elapsed;
@@ -150,7 +150,7 @@ private:
         size_t total;
         size_t requests;
     } stats;
-    
+
     int width, height;
 
     std::atomic<bool> running;
@@ -161,9 +161,9 @@ private:
     std::mutex render_mutex;
         std::condition_variable cv;
         bool changed, mustPrint;
-    
+
     std::atomic<bool> inputting;
-    
+
     void enableAnsiSupport() {
 #ifdef _WIN32
         HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -209,7 +209,7 @@ private:
 
             size_t space_pos = text.rfind(' ', start + len);
             std::string segment;
-            
+
             if (space_pos != std::string::npos && space_pos > start) {
                 size_t split_len = space_pos - start;
                 segment = text.substr(start, split_len);
@@ -226,13 +226,13 @@ private:
     static std::vector<std::string> wrapStatusBar(const std::string& text, int width) {
         std::vector<std::string> lines;
         if (text.empty()) return lines;
-        
+
         int target_width = (width > 2) ? width - 2 : 1;
 
         std::string delimiter = " | ";
         size_t start = 0;
         size_t end = text.find(delimiter);
-        
+
         std::string current_line;
 
         auto add_part = [&](const std::string& part) {
@@ -254,11 +254,11 @@ private:
             end = text.find(delimiter, start);
         }
         add_part(text.substr(start));
-        
+
         if (!current_line.empty()) {
             lines.push_back(" " + current_line);
         }
-        
+
         return lines;
     }
 
@@ -289,7 +289,7 @@ private:
             {
                 std::unique_lock<std::mutex> lock(render_mutex);
                 cv.wait_for(lock, std::chrono::milliseconds(50), [this]{ return changed || !running; });
-                
+
                 if (!running && !mustPrint) return;
 
                 updateDimensions();
@@ -307,10 +307,10 @@ private:
                 snap_stats = stats;
                 snap_inputting = inputting;
                 snap_prompt = current_prompt;
-                
+
                 changed = false;
                 mustPrint = false;
-            } 
+            }
 
             // --- Layout Calculation ---
             std::vector<std::string> status_lines_vec;
@@ -321,7 +321,7 @@ private:
                 int h = (int)(snap_stats.elapsed / 3600);
                 int m = (int)((snap_stats.elapsed % 3600) / 60);
                 int s = (int)(snap_stats.elapsed % 60);
-                
+
                 char time_buf[16];
                 snprintf(time_buf, sizeof(time_buf), "%02d:%02d:%02d", h, m, s);
 
@@ -342,11 +342,11 @@ private:
                 std::deque<std::string> visual;
                 for (auto it = raw.rbegin(); it != raw.rend(); ++it) {
                     if ((int)visual.size() >= max_h) break;
-                    
+
                     std::vector<std::string> parts = wrapText(*it, w);
                     for (auto bit = parts.rbegin(); bit != parts.rend(); ++bit) {
                         visual.push_front(*bit);
-                        if ((int)visual.size() >= max_h) break; 
+                        if ((int)visual.size() >= max_h) break;
                     }
                 }
                 return std::vector<std::string>(visual.begin(), visual.end());
@@ -361,7 +361,7 @@ private:
             if (dim_changed) {
                 ss << "\033[?7l\033[2J\033[3J";
             }
-            
+
             // 2. Save Cursor (DEC) if inputting
             if (snap_inputting) ss << "\0337";
 
@@ -376,7 +376,7 @@ private:
                 std::string r = (offset >= 0) ? visual_right[offset] : "";
 
                 ss << padOrTruncate(l, text_width) << " | " << padOrTruncate(r, text_width) << "\033[K";
-                
+
                 if (row < viewport_height - 1) ss << "\n";
             }
 
@@ -388,7 +388,7 @@ private:
                 }
                 // Draw Status Bar
                 for (size_t i = 0; i < status_lines_vec.size(); ++i) {
-                    ss << "\033[" << (viewport_height + 1 + i) << ";1H"; 
+                    ss << "\033[" << (viewport_height + 1 + i) << ";1H";
                     ss << "\033[7m" << padOrTruncate(status_lines_vec[i], last_w) << "\033[0m";
                 }
             } else {
@@ -406,7 +406,7 @@ private:
             {
                 std::lock_guard<std::mutex> io_lock(console_mutex);
 
-                if (inputting != snap_inputting) continue; 
+                if (inputting != snap_inputting) continue;
 
                 std::cout << ss.str() << std::flush;
             }
