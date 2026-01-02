@@ -57,7 +57,8 @@ public:
     std::string getName(const uint32_t& id) const {
         std::shared_lock lock(elements_mutex);
 
-        return id < elements.size() ? elements[id].name : "";
+        static const std::string empty = "";
+        return id < elements.size() ? elements[id].name : empty;
     }
 
     std::vector<std::string> getNames(std::vector<uint32_t> ids) const {
@@ -74,13 +75,11 @@ public:
     std::pair<uint32_t, bool> addElement(const std::string& name, const std::string& emoji, bool isGlobalNew) {
         std::unique_lock lock(elements_mutex);
 
-        if (name_to_id.count(name)) {
-            return {name_to_id[name], false};
-        }
+        if (auto it = name_to_id.find(name); it != name_to_id.end()) return {it->second, false};
 
         uint32_t id = (uint32_t)elements.size();
         elements.push_back({name});
-        name_to_id[name] = id;
+        name_to_id[elements.back().name] = id;
         
         appendElementToDisk(name, emoji, isGlobalNew);
         
@@ -101,19 +100,32 @@ public:
     uint32_t getResult(uint32_t idA, uint32_t idB) const {
         std::shared_lock lock(recipes_mutex);
 
-        uint64_t key = makeKey(idA, idB);
-        auto it = known_recipes.find(key);
-        if (it != known_recipes.end()) return it->second;
-        return UINT32_MAX; 
+        if (idA > idB) std::swap(idA, idB);
+
+        auto it = std::lower_bound(known_recipes.begin(), known_recipes.end(), std::make_pair(idA, idB), 
+            [](const RecipeRecord& r, const std::pair<uint32_t, uint32_t>& val) {
+                if (r.second != val.second) return r.second < val.second;
+                return r.first < val.first;
+            });
+
+        if (it != known_recipes.end() && it->first == idA && it->second == idB) return it->result;
+        return UINT32_MAX;
     }
 
     void addRecipe(uint32_t idA, uint32_t idB, uint32_t resultId) {
         std::unique_lock lock(recipes_mutex);
 
-        uint64_t key = makeKey(idA, idB);
-        if (known_recipes.count(key)) return;
+        if (idA > idB) std::swap(idA, idB);
 
-        known_recipes[key] = resultId;
+        auto it = std::lower_bound(known_recipes.begin(), known_recipes.end(), std::make_pair(idA, idB), 
+            [](const RecipeRecord& r, const std::pair<uint32_t, uint32_t>& val) {
+                if (r.second != val.second) return r.second < val.second;
+                return r.first < val.first;
+            });
+
+        if (it != known_recipes.end() && it->first == idA && it->second == idB) return;
+
+        known_recipes.insert(it, {idA, idB, resultId});
         appendRecipeToDisk(idA, idB, resultId);
     }
 
@@ -131,20 +143,15 @@ private:
     std::once_flag loaded;
 
     mutable std::shared_mutex elements_mutex;
-        std::vector<Element> elements;
-        std::unordered_map<std::string, uint32_t> name_to_id;
+        std::deque<Element> elements;
+        std::unordered_map<std::string_view, uint32_t> name_to_id;
 
     mutable std::shared_mutex recipes_mutex;
-        std::unordered_map<uint64_t, uint32_t> known_recipes;
+        std::vector<RecipeRecord> known_recipes;
 
-    // Cache the file streams to improve performance and prevent locking issues
+    // Cache the file streams to improve performance
     std::ofstream elements_out;
     std::ofstream recipes_out;
-    
-    static uint64_t makeKey(uint32_t idA, uint32_t idB) {
-        if (idA > idB) std::swap(idA, idB);
-        return (uint64_t)idA << 32 | (uint32_t)idB;
-    }
 
     bool loadElements() {
         std::ifstream f("elements.bin", std::ios::binary);
@@ -174,7 +181,7 @@ private:
 
             uint32_t id = (uint32_t)elements.size();
             elements.push_back({name});
-            name_to_id[name] = id;
+            name_to_id[elements.back().name] = id;
         }
         
         return true;
@@ -182,29 +189,39 @@ private:
 
     bool loadRecipes(size_t maxElementId) {
         std::ifstream f("recipes.bin", std::ios::binary);
-        if (!f.is_open()) return true; // File doesn't exist
+        if (!f.is_open()) return true; 
 
         f.seekg(0, std::ios::end);
         size_t fileSize = f.tellg();
         f.seekg(0, std::ios::beg);
 
         if (fileSize == 0) return true;
-
-        if (fileSize % sizeof(RecipeRecord) != 0) return false; // Not a multiple of Record size
+        if (fileSize % sizeof(RecipeRecord) != 0) return false; 
 
         size_t count = fileSize / sizeof(RecipeRecord);
-        std::vector<RecipeRecord> buffer(count);
+        known_recipes.resize(count);
         
-        if (!f.read((char*)buffer.data(), fileSize)) return false; // Unable to read database
+        if (!f.read((char*)known_recipes.data(), fileSize)) return false; 
 
-        known_recipes.reserve(count * 2);
-        
-        for (const auto& r : buffer) {
-            if (r.first >= maxElementId || r.second >= maxElementId || r.result >= maxElementId) return false; // One or more of the IDs don't exist
-
-            uint64_t key = makeKey(r.first, r.second);
-            known_recipes[key] = r.result;
+        // Canonicalize (ensure first < second)
+        for (auto& r : known_recipes) {
+            if (r.first >= maxElementId || r.second >= maxElementId || r.result >= maxElementId) return false;
+            if (r.first > r.second) std::swap(r.first, r.second);
         }
+
+        // Sort by Second ID (Primary), then First ID (Secondary)
+        std::sort(known_recipes.begin(), known_recipes.end(), 
+            [](const RecipeRecord& a, const RecipeRecord& b) {
+                if (a.second != b.second) return a.second < b.second;
+                return a.first < b.first;
+            });
+
+        // Deduplicate
+        auto last = std::unique(known_recipes.begin(), known_recipes.end(),
+            [](const RecipeRecord& a, const RecipeRecord& b) {
+                return a.first == b.first && a.second == b.second;
+            });
+        known_recipes.erase(last, known_recipes.end());
 
         return true;
     }
@@ -221,7 +238,7 @@ private:
         elements_out.write(emoji.data(), emojiLen);
         elements_out.write((char*)&isNew, sizeof(isNew));
         
-        // Important: Flush to ensure data is safe in case of crash
+        // Flush to ensure data is safe in case of crash
         elements_out.flush();
     }
 
