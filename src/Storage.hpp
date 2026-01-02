@@ -30,20 +30,20 @@ public:
         if (recipes_out.is_open()) recipes_out.close();
     }
 
-    std::pair<unsigned char, size_t> load() {
+    std::pair<unsigned char, size_t> load(std::string elmFile, std::string recFile) {
         std::pair<unsigned char, size_t> res = { 0, 0 };
         std::call_once(loaded, [&](){
-            if (!loadElements()) {
+            if (!loadElements(elmFile)) {
                 res = { 2, 0 };
                 return;
             }
-            if (!loadRecipes(elements.size())) {
+            if (!loadRecipes(recFile, elements.size())) {
                 res = { 2, 1 };
                 return;
             }
 
-            elements_out.open("elements.bin", std::ios::binary | std::ios::app);
-            recipes_out.open("recipes.bin", std::ios::binary | std::ios::app);
+            elements_out.open(elmFile, std::ios::binary | std::ios::app);
+            recipes_out.open(recFile, std::ios::binary | std::ios::app);
 
             if (elements.size() > (std::numeric_limits<uint32_t>::max() / 2)) {
                 res = { 1, elements.size() };
@@ -153,8 +153,8 @@ private:
     std::ofstream elements_out;
     std::ofstream recipes_out;
 
-    bool loadElements() {
-        std::ifstream f("elements.bin", std::ios::binary);
+    bool loadElements(std::string file) {
+        std::ifstream f(file, std::ios::binary);
         if (!f.is_open()) return true; // File doesn't exist
 
         elements.clear();
@@ -187,9 +187,9 @@ private:
         return true;
     }
 
-    bool loadRecipes(size_t maxElementId) {
-        std::ifstream f("recipes.bin", std::ios::binary);
-        if (!f.is_open()) return true; 
+    bool loadRecipes(std::string file, size_t maxElementId) {
+        std::ifstream f(file, std::ios::binary);
+        if (!f.is_open()) return true; // File doesn't exist
 
         f.seekg(0, std::ios::end);
         size_t fileSize = f.tellg();
