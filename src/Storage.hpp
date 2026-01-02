@@ -32,15 +32,24 @@ public:
 
     std::pair<unsigned char, size_t> load() {
         std::pair<unsigned char, size_t> res = { 0, 0 };
-        std::call_once(loaded, [&]{
-            loadElements();
-            loadRecipes();
-            
+        std::call_once(loaded, [&](){
+            if (!loadElements()) {
+                res = { 2, 0 };
+                return;
+            }
+            if (!loadRecipes(elements.size())) {
+                res = { 2, 1 };
+                return;
+            }
+
             elements_out.open("elements.bin", std::ios::binary | std::ios::app);
             recipes_out.open("recipes.bin", std::ios::binary | std::ios::app);
 
-            if (elements.size() > (std::numeric_limits<uint32_t>::max() / 2)) res = { 1, elements.size() };
-            else res = { 0, elements.size() };
+            if (elements.size() > (std::numeric_limits<uint32_t>::max() / 2)) {
+                res = { 1, elements.size() };
+            } else {
+                res = { 0, elements.size() };
+            }
         });
         return res;
     }
@@ -137,53 +146,67 @@ private:
         return (uint64_t)idA << 32 | (uint32_t)idB;
     }
 
-    void loadElements() {
+    bool loadElements() {
         std::ifstream f("elements.bin", std::ios::binary);
-        if (!f.is_open()) return;
+        if (!f.is_open()) return true; // File doesn't exist
 
         elements.clear();
         name_to_id.clear();
 
-        while (true) {
-            // Check for EOF before reading
-            if (f.peek() == EOF) break;
-
+        while (f.peek() != EOF) {
             uint16_t nameLen = 0;
             uint16_t emojiLen = 0;
             bool isNew = false;
             
-            if (!f.read((char*)&nameLen, sizeof(nameLen))) break;
+            if (!f.read((char*)&nameLen, sizeof(nameLen))) return false; // Partial data
+            if (nameLen > 4096) return false; // Name too long
+
             std::string name(nameLen, '\0');
-            f.read(&name[0], nameLen);
+            if (!f.read(&name[0], nameLen)) return false; // Missing data (name)
 
-            if (!f.read((char*)&emojiLen, sizeof(emojiLen))) break;
-            f.ignore(emojiLen); // Skip Emoji
+            if (!f.read((char*)&emojiLen, sizeof(emojiLen))) return false; // Missing data (emoji)
+            if (emojiLen > 4096) return false; // Emoji too long
 
-            if (!f.read((char*)&isNew, sizeof(isNew))) break;
+            f.ignore(emojiLen); 
+            if (f.gcount() != emojiLen) return false; // Unexpected EOF (emoji)
+
+            if (!f.read((char*)&isNew, sizeof(isNew))) return false; // Unexpected EOF (New Flag)
 
             uint32_t id = (uint32_t)elements.size();
             elements.push_back({name});
             name_to_id[name] = id;
         }
+        
+        return true;
     }
 
-    void loadRecipes() {
+    bool loadRecipes(size_t maxElementId) {
         std::ifstream f("recipes.bin", std::ios::binary);
-        if (!f.is_open()) return;
+        if (!f.is_open()) return true; // File doesn't exist
 
         f.seekg(0, std::ios::end);
         size_t fileSize = f.tellg();
         f.seekg(0, std::ios::beg);
 
+        if (fileSize == 0) return true;
+
+        if (fileSize % sizeof(RecipeRecord) != 0) return false; // Not a multiple of Record size
+
         size_t count = fileSize / sizeof(RecipeRecord);
         std::vector<RecipeRecord> buffer(count);
-        f.read((char*)buffer.data(), fileSize);
+        
+        if (!f.read((char*)buffer.data(), fileSize)) return false; // Unable to read database
 
         known_recipes.reserve(count * 2);
+        
         for (const auto& r : buffer) {
+            if (r.first >= maxElementId || r.second >= maxElementId || r.result >= maxElementId) return false; // One or more of the IDs don't exist
+
             uint64_t key = makeKey(r.first, r.second);
             known_recipes[key] = r.result;
         }
+
+        return true;
     }
 
     void appendElementToDisk(const std::string& name, const std::string& emoji, bool isNew) {
@@ -199,7 +222,6 @@ private:
         elements_out.write((char*)&isNew, sizeof(isNew));
         
         // Important: Flush to ensure data is safe in case of crash
-        // TODO: delete in the future
         elements_out.flush();
     }
 

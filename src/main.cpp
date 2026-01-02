@@ -55,6 +55,10 @@ int main() {
             case 1:
                 printer.pushLeft("[Storage] Warning: ID limit approaching capacity.");
                 break;
+            case 2:
+                if (elms == 0) printer.pushLeft("[Storage] Elements database is corrupted.");
+                else printer.pushLeft("[Storage] Recipes database is corrupted.");
+                return 0;
         }
         data.initDefaults();
 
